@@ -82,6 +82,9 @@ ENV/
 target/
 .maturin/
 **/*.rs.bk
+svve_core/_svve_core*.so
+svve_core/_svve_core*.pyd
+svve_core/_svve_core*.dylib
 
 # ------------------------------------------------------------
 # Logs, temp files, local caches

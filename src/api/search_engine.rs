@@ -1,33 +1,33 @@
 use numpy::PyReadonlyArray1;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use std::sync::Arc;
+use pyo3::types::PyAny;
 
-#[derive(Debug, Default)]
-pub struct EngineState {
-    pub index_root: String,
-}
+use crate::core::pipeline;
+use crate::vdb::adapter::CallbackVdb;
 
 #[pyclass(name = "SearchEngine")]
-pub struct PySearchEngine {
-    state: Arc<EngineState>,
-}
+pub struct PySearchEngine;
 
 #[pymethods]
 impl PySearchEngine {
     #[new]
-    pub fn new(index_root: String) -> Self {
-        Self {
-            state: Arc::new(EngineState { index_root }),
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    #[getter]
-    pub fn index_root(&self) -> String {
-        self.state.index_root.clone()
-    }
+    pub fn search(
+        &self,
+        query: PyReadonlyArray1<'_, f32>,
+        top_k: usize,
+        search_fn: Py<PyAny>,
+    ) -> PyResult<(Vec<u32>, Vec<f32>)> {
+        let query_slice = query
+            .as_slice()
+            .map_err(|_| PyValueError::new_err("query는 contiguous float32 1D 배열이어야 합니다"))?;
 
-    pub fn search(&self, _query: PyReadonlyArray1<'_, f32>, _top_k: usize) -> PyResult<(Vec<u32>, Vec<f32>)> {
-        // Placeholder: return Struct-of-Arrays shape (ids, scores).
-        Ok((Vec::new(), Vec::new()))
+        let callback_adapter = CallbackVdb::new(search_fn, query_slice.len());
+        pipeline::execute_search(&callback_adapter, query_slice, top_k)
+            .map_err(PyRuntimeError::new_err)
     }
 }

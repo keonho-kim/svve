@@ -28,6 +28,7 @@ Then, follow the instructions below strictly:
 
 - **Core Goal:** Deliver minimum scope with production-grade quality.
 - **No Speculation:** Implement only explicit requirements; do not add unrequested features, layers, or config.
+- **Strict Prohibition on Unrequested Development:** Do NOT implement any function, fallback path, adapter, or configuration that the user did not explicitly request.
 - **Fallback Policy:** Do not add fallback paths unless explicitly required. If required, define trigger, behavior, and failure signal clearly.
 - **Observable Behavior:** Never use silent degradation. Fallback/error activation must be visible (error type, status, or log field).
 - **Abstraction Gate (Rule of Two):** Add interfaces/strategy patterns only when two real implementations exist now (or are explicitly required in the same task).

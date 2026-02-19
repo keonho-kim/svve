@@ -1,3 +1,5 @@
+#![allow(non_local_definitions)]
+
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
 
@@ -11,16 +13,16 @@ pub mod core {
     pub mod voting;
 }
 
-pub mod index {
-    pub mod mmap_loader;
-    pub mod tier1_bq;
-    pub mod tier2_float;
-}
-
 pub mod math {
     pub mod linalg;
-    pub mod simd_hamming;
-    pub mod whitening;
+    pub mod normalize;
+    pub mod topk;
+}
+
+pub mod vdb {
+    pub mod adapter;
+    pub mod fetch;
+    pub mod query;
 }
 
 use api::search_engine::PySearchEngine;

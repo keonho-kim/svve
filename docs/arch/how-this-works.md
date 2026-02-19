@@ -2,7 +2,7 @@
 
 ## 1. 문서 목적
 
-이 문서는 SVVE 라이브러리가 "이미 구축된 VDB"와 연동되어 실제 런타임에서 어떻게 동작하는지 설명한다.  
+이 문서는 SVVE 라이브러리가 기존 VDB와 연동되어 실제 런타임에서 어떻게 동작하는지 설명한다.  
 이론 배경은 `docs/arch/theoretical_background.md`, 전체 설계 기준은 `docs/arch/blueprint.md`를 따른다.
 
 ## 2. 런타임 아키텍처 개요
@@ -11,7 +11,7 @@ SVVE는 세 계층으로 구성된다.
 
 - Python 계층(`svve_core`): 입력 검증, 예외 표준화, 사용자 API
 - Rust 계층(`src/*`): 고정 SVVE 절차 실행(분할, 투표, PRF, 재검색/재정렬)
-- 외부 VDB: 실제 벡터 검색 저장소(이미 임베딩 완료 상태)
+- 외부 VDB: `search_fn`으로 연결되는 벡터 검색 저장소
 
 핵심 포인트:
 
@@ -19,6 +19,7 @@ SVVE는 세 계층으로 구성된다.
 - 단일 VDB 인덱스만 사용
 - 오프라인 사전 계산/별도 보조 인덱스 없음
 - PRF 단계는 필수이며 항상 실행
+- 연동 방식은 `search_fn` 콜백 주입을 사용
 
 ## 3. 코드 구조와 실행 책임
 
@@ -40,7 +41,7 @@ SVVE는 세 계층으로 구성된다.
 ### 4.1 서버 시작 (Startup)
 
 1. 애플리케이션이 `SearchEngine(...)`을 초기화한다.
-2. 엔진은 VDB 연결 정보(엔드포인트, 컬렉션/인덱스명)를 상태로 보관한다.
+2. 요청 시 전달된 `search_fn`으로 외부 VDB를 호출할 준비를 한다.
 3. Rust 내부에서 병렬 처리 자원(`rayon` 스레드풀)을 준비한다.
 
 ### 4.2 요청 수신 및 검증 (Python)
@@ -53,12 +54,16 @@ SVVE는 세 계층으로 구성된다.
 
 1. PyO3 경계에서 NumPy 데이터를 Rust로 전달한다.
 2. 쿼리를 4개 세그먼트 질의로 분할한다(`N=4`).
-3. 세그먼트별 Top-100 후보를 병렬 검색한다(`k_seg=100`).
+3. 세그먼트별 Top-100 후보를 검색한다(`k_seg=100`).
+   - `search_fn` 콜백 안정성을 위해 순차 실행한다.
 4. 문서 ID 기준으로 병합하고 3/2/1 투표 규칙을 적용한다.
 5. 상위 생존 후보 5개를 확정한다(`M=5`).
 6. 생존 후보 기반 PRF 보정 쿼리를 생성한다(`q* = 0.7q + 0.3c`).
 7. 보정 쿼리로 추가 검색과 후보 재정렬을 반복한다.
-8. 최종 결과 수가 요청 `top_k`를 채우면 루프를 종료한다.
+8. 아래 조건 중 하나를 만족하면 루프를 종료한다.
+   - 최종 결과 수가 요청 `top_k`를 충족
+   - 랭킹 안정화 조기 종료 조건 충족
+   - 최대 반복 라운드 도달
 
 ### 4.4 응답 반환
 
@@ -76,14 +81,18 @@ SVVE는 세 계층으로 구성된다.
 ```python
 from svve_core import SearchEngine
 
-engine = SearchEngine(index_root="/path/or/alias")
-ids, scores = engine.search(query, top_k=10)
+engine = SearchEngine()
+ids, scores = engine.search(query, top_k=10, search_fn=search_fn)
 ```
 
 ### 입력 인터페이스
 
 - `query`: 1차원 배열로 해석 가능해야 하며 내부에서 `float32`로 정규화
 - `top_k`: 1 이상의 정수
+- `search_fn`(선택): 외부 VDB 검색 함수
+  - 시그니처: `search_fn(query, top_k)`
+  - 반환: `(ids, scores, vectors)`
+  - `vectors`는 PRF centroid 계산에 사용되므로 필수
 
 ### 출력 인터페이스
 
@@ -99,7 +108,7 @@ ids, scores = engine.search(query, top_k=10)
 
 - 멀티프로세스 확장: Python 워커 레이어에서 담당
 - CPU 병합/정렬: Rust `rayon` 병렬 처리
-- VDB I/O 동시성: 어댑터 정책(동기 스레드 병렬 또는 비동기 호출)으로 분리
+- VDB 검색 동시성: `search_fn` 콜백 안정성을 위해 세그먼트 순차 실행
 - 공유 상태: `Arc` 읽기 중심 구조로 락 경합 최소화
 
 ## 7. 고정 운영 목표
@@ -109,7 +118,8 @@ ids, scores = engine.search(query, top_k=10)
 - 생존 후보 수: `M=5`
 - PRF 계수: `alpha=0.7`
 - 지연시간 목표: `p95 <= 100ms`, `p99 <= 150ms`
-- 완료 기준: 최종 결과가 요청 `top_k`를 충족할 때
+- 조기 종료 임계치: Jaccard `>= 0.95`, 점수 개선율 `<= 0.5%`, 연속 2라운드
+- 최대 반복 라운드: `MAX_REFINEMENT_ROUNDS=8`
 
 ## 8. 추가 최적화 항목 (절차 고정)
 

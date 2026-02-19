@@ -13,7 +13,7 @@ class SearchRequest(BaseModel):
     @field_validator("query", mode="before")
     @classmethod
     def validate_query(cls, value: object) -> np.ndarray:
-        query = np.asarray(value, dtype=np.float32)
+        query = np.ascontiguousarray(np.asarray(value, dtype=np.float32))
         if query.ndim != 1:
             raise ValueError("query must be a 1D numpy array")
         return query
