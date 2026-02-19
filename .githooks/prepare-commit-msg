@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MSG_FILE="$1"
+COMMIT_SOURCE="${2:-}"
+
+# merge/squash/reword 메시지는 자동 덮어쓰지 않습니다.
+case "$COMMIT_SOURCE" in
+  merge|squash|commit)
+    exit 0
+    ;;
+esac
+
+TODAY="$(date +%Y%m%d)"
+START_TS="${TODAY:0:4}-${TODAY:4:2}-${TODAY:6:2} 00:00:00"
+END_TS="${TODAY:0:4}-${TODAY:4:2}-${TODAY:6:2} 23:59:59"
+
+COUNT_TODAY="$(git rev-list --count --since="$START_TS" --until="$END_TS" HEAD 2>/dev/null || echo 0)"
+NEXT_NUM=$((COUNT_TODAY + 1))
+PREFIX="${TODAY}.v${NEXT_NUM}"
+
+FIRST_CONTENT_LINE="$(grep -m1 -E '^[[:space:]]*[^#[:space:]].*' "$MSG_FILE" || true)"
+
+# 이미 같은 형식 접두사가 있으면 중복으로 붙이지 않습니다.
+if [[ -n "$FIRST_CONTENT_LINE" ]] && [[ "$FIRST_CONTENT_LINE" =~ ^${TODAY}\.v[0-9]+([[:space:]]|$) ]]; then
+  exit 0
+fi
+
+if [[ -z "$FIRST_CONTENT_LINE" ]]; then
+  printf '%s\n' "$PREFIX" > "$MSG_FILE"
+  exit 0
+fi
+
+TMP_FILE="${MSG_FILE}.tmp"
+awk -v p="$PREFIX" '
+  BEGIN { done = 0 }
+  {
+    if (!done && $0 !~ /^[[:space:]]*#/ && $0 ~ /[^[:space:]]/) {
+      print p " " $0
+      done = 1
+      next
+    }
+    print $0
+  }
+' "$MSG_FILE" > "$TMP_FILE"
+mv "$TMP_FILE" "$MSG_FILE"
