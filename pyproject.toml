@@ -1,6 +1,6 @@
 [project]
 name = "svve-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Segmented Vector Voting & Expansion"
 readme = "README.md"
 authors = [

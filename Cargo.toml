@@ -1,6 +1,6 @@
 [package]
 name = "svve_core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Segmented Vector Voting & Expansion core library (Python-Rust hybrid)"
 license = "Proprietary"
