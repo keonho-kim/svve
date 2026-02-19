@@ -1,0 +1,124 @@
+# ------------------------------------------------------------
+# OS-generated files
+# ------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Icon?
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.stackdump
+
+# Linux / network filesystems
+.nfs*
+.directory
+
+# ------------------------------------------------------------
+# Editors / IDEs
+# ------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+*.suo
+*.user
+*.userossc
+*.sln.docstates
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ------------------------------------------------------------
+# Python
+# ------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.ipynb_checkpoints/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Python packaging / build outputs
+build/
+dist/
+wheels/
+wheelhouse/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ------------------------------------------------------------
+# Rust / Cargo / maturin
+# ------------------------------------------------------------
+target/
+.maturin/
+**/*.rs.bk
+
+# ------------------------------------------------------------
+# Logs, temp files, local caches
+# ------------------------------------------------------------
+*.log
+*.pid
+*.pid.lock
+*.out
+*.err
+*.tmp
+*.temp
+.cache/
+tmp/
+temp/
+.tmp/
+
+# ------------------------------------------------------------
+# Secrets / local environment files
+# ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# ------------------------------------------------------------
+# Archives / packaged artifacts
+# ------------------------------------------------------------
+*.7z
+*.bz2
+*.gz
+*.rar
+*.tar
+*.tgz
+*.xz
+*.zip
+
+# Keep lockfiles tracked for reproducible builds
+!Cargo.lock
+!uv.lock
