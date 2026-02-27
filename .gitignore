@@ -85,6 +85,9 @@ target/
 svve_core/_svve_core*.so
 svve_core/_svve_core*.pyd
 svve_core/_svve_core*.dylib
+src_py/vtree_search/_vtree_search*.so
+src_py/vtree_search/_vtree_search*.pyd
+src_py/vtree_search/_vtree_search*.dylib
 
 # ------------------------------------------------------------
 # Logs, temp files, local caches

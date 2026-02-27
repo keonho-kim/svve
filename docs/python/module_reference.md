@@ -1,97 +1,98 @@
-# Python 모듈/함수 레퍼런스
+# Python 모듈 레퍼런스 (Phase 2)
 
-## 1) `svve_core/__init__.py`
+## `vtree_search/__init__.py`
 
-### 역할
+- 공개 클래스: `VtreeIngestor`, `VTreeSearchEngine`
+- 공개 설정: `PostgresConfig`, `RedisQueueConfig`, `FilterHttpConfig`, `SearchConfig`, `IngestionConfig`
+- 공개 예외: `QueueOverloadedError`, `JobNotFoundError`, `JobExpiredError`, `JobFailedError`, `DependencyUnavailableError`
 
-- 라이브러리 외부로 노출할 심볼을 단일 지점에서 정의
+## `vtree_search/config/models.py`
 
-### 노출 심볼
+- `PostgresConfig`
+- `RedisQueueConfig`
+- `FilterHttpConfig`
+- `SearchConfig`
+- `IngestionAnnotationConfig`
+- `IngestionPreprocessConfig`
+- `IngestionConfig`
 
-| 식별자 | 설명 |
-|---|---|
-| `SearchEngine` | 사용자 검색 API 엔트리 클래스 |
-| `SVVEError` | 공통 베이스 예외 |
-| `QueryValidationError` | 입력 검증 실패 예외 |
-| `SearchExecutionError` | Rust 실행 실패 예외 |
+## `vtree_search/contracts/search_models.py`
 
-`__all__`은 위 4개 심볼만 export한다.
+- `SearchSubmission`
 
-## 2) `svve_core/exceptions.py`
+## `vtree_search/contracts/job_models.py`
 
-### 역할
+- `SearchJobAccepted`
+- `SearchJobStatus`
+- `SearchJobResult`
+- `SearchJobCanceled`
+- `SearchCandidate`
+- `SearchMetrics`
 
-- 예외 계층 표준화
+## `vtree_search/contracts/ingestion_models.py`
 
-### 클래스
+- `IngestionSummaryNode`
+- `IngestionPageNode`
+- `IngestionDocument`
+- `IngestionResult`
 
-| 클래스 | 상속 | 사용 시점 |
-|---|---|---|
-| `SVVEError` | `Exception` | 라이브러리 공통 베이스 |
-| `QueryValidationError` | `SVVEError` | 입력/요청 파라미터 검증 실패 |
-| `SearchExecutionError` | `SVVEError` | Rust 코어 실행 중 실패 |
+## `vtree_search/runtime/bridge.py`
 
-## 3) `svve_core/schemas.py`
+- `RustRuntimeBridge.execute_search_job(payload)`
+- `RustRuntimeBridge.execute_ingestion_job(payload)`
 
-### 역할
+## `vtree_search/queue/redis_streams.py`
 
-- 사용자 입력을 Rust가 기대하는 형식으로 강제
+- `RedisSearchQueue`
+  - `guard_capacity()`
+  - `create_job_record()`
+  - `enqueue()`
+  - `read()`
+  - `ack()`
+  - `move_to_dlq()`
 
-### 모델
+## `vtree_search/search/engine.py`
 
-| 식별자 | 종류 | 필드/동작 |
-|---|---|---|
-| `SearchRequest` | `pydantic.BaseModel` | `query: np.ndarray`, `top_k: int(>=1)` |
+- `VTreeSearchEngine.submit_search()`
+- `VTreeSearchEngine.get_job()`
+- `VTreeSearchEngine.fetch_result()`
+- `VTreeSearchEngine.cancel_job()`
+- `VTreeSearchEngine.run_worker_once()`
+- `VTreeSearchEngine.run_worker_forever()`
 
-### 함수(validator)
+## `vtree_search/ingestion/ingestor.py`
 
-| 식별자 | 시그니처 | 설명 | 실패 조건 |
-|---|---|---|---|
-| `validate_query` | `@field_validator("query", mode="before")` | 입력을 contiguous `np.float32` 1D 배열로 변환 | 1D가 아니면 `ValueError("query must be a 1D numpy array")` |
+- `VtreeIngestor.upsert_document()`
+- `VtreeIngestor.upsert_pages()`
+- `VtreeIngestor.rebuild_summary_embeddings()`
+- `VtreeIngestor.build_page_nodes_from_path()`
+- `VtreeIngestor.upsert_document_from_path()`
 
-## 4) `svve_core/engine.py`
+## `vtree_search/ingestion/source_parser.py`
 
-### 역할
+- `SourceParser.scan_input_files()`
+- `SourceParser.build_page_nodes_from_files()`
+- `build_source_parser()`
 
-- 사용자 API 구현
-- Python 검증/예외를 Rust 경계와 연결
+## `vtree_search/ingestion/docx_layout.py`
 
-### 타입 별칭
+- `iterate_docx_blocks()`
+- `resolve_docx_layout_metrics()`
+- `estimate_docx_paragraph_layout()`
+- `estimate_docx_table_height()`
+- `advance_docx_page_state()`
+- `is_docx_page_break_before()`
 
-| 식별자 | 정의 | 의미 |
-|---|---|---|
-| `SearchFn` | `Callable[[NDArray[np.float32], int], tuple[list[int], list[float], list[list[float]]]]` | 외부 VDB 검색 함수 인터페이스 |
+## `vtree_search/ingestion/parser_helpers.py`
 
-### 클래스/메서드
+- `serialize_docx_table()`
+- `table_matrix_to_html()`
+- `resolve_docx_heading_level()`
+- `extract_pdf_image_boxes()`
+- `to_pixel_box()`
+- `chunk_blocks()`
 
-| 식별자 | 시그니처 | 설명 | 실패 조건 |
-|---|---|---|---|
-| `SearchEngine.__init__` | `def __init__(self) -> None` | Rust 확장 객체(`_svve_core.SearchEngine`) 초기화 | 확장 모듈 import 실패 |
-| `SearchEngine.search` | `def search(self, query: ArrayLike, top_k: int = 10, search_fn: SearchFn | None = None) -> tuple[NDArray[np.uint32], NDArray[np.float32]]` | 입력 검증 후 Rust 검색 호출, 결과 dtype 강제 | `search_fn is None`, Pydantic 검증 실패, Rust `RuntimeError` |
+## `vtree_search/ingestion/annotation_client.py`
 
-### `search_fn` 인터페이스 규칙
-
-| 항목 | 규칙 |
-|---|---|
-| 시그니처 | `search_fn(query, top_k)` |
-| 반환 형식 | `(ids, scores, vectors)` |
-| 길이 제약 | `len(ids) == len(scores) == len(vectors)` |
-| 차원 제약 | 각 `vectors[i]` 차원은 쿼리 차원과 동일 |
-| 필수성 | PRF 계산을 위해 `vectors`는 반드시 필요 |
-
-실제 상세 검증은 Rust `CallbackVdb`에서 수행된다.
-
-## 5) 테스트 매핑
-
-### `tests/python/test_schemas.py`
-
-| 테스트명 | 검증 내용 |
-|---|---|
-| `test_search_request_normalizes_query_dtype_and_shape` | dtype(`float32`), 1D, contiguous 정규화 확인 |
-| `test_search_request_rejects_non_1d_query` | 2D 입력 거부 확인 |
-
-## 6) 변경 영향도 빠른 가이드
-
-- `SearchFn` 반환 형식 변경: Rust `src/vdb/adapter.rs`와 동시 수정 필요.
-- `SearchRequest` validator 변경: Python 테스트와 Rust 입력 전제(1D float32 contiguous)에 영향.
-- 예외 타입 변경: 사용자 애플리케이션의 예외 처리 코드 호환성 영향.
+- `IngestionAnnotationClient.annotate_table()`
+- `IngestionAnnotationClient.annotate_image()`

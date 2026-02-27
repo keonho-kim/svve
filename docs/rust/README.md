@@ -1,43 +1,27 @@
-# Rust 문서 개요
+# Rust 계층 개요 (Phase 2)
 
 ## 목적
 
-이 문서는 `src/`의 Rust 코드베이스를 빠르게 파악하고 유지보수하기 위한 인덱스 문서다.  
-기준은 "현재 `src/lib.rs`에 연결되어 실제로 빌드/실행되는 모듈"이다.
+`src_rs`는 검색/적재 핵심 실행 경로를 담당한다.
 
-## 현재 활성 컴포넌트
+## 모듈 책임
 
-```text
-src/lib.rs
-├── api/search_engine.rs
-├── core/pipeline.rs
-├── core/voting.rs
-├── core/expansion.rs
-├── vdb/adapter.rs
-├── vdb/query.rs
-├── vdb/fetch.rs
-├── math/linalg.rs
-├── math/normalize.rs
-└── math/topk.rs
-```
+- `api/`
+  - `SearchBridge`: 검색 JSON 실행 진입점
+  - `IngestionBridge`: 적재 JSON 실행 진입점
+- `core/`
+  - `search_pipeline`: 검색 파이프라인
+  - `ingestion_pipeline`: 적재 파이프라인
+  - `filter_http`: 외부 필터 병렬 호출
+  - `errors`: 오류 모델
+- `index/`
+  - `postgres_repo`: 조회/upsert 저장소
+  - `sql`: 식별자/벡터 리터럴 검증 유틸
+- `math/`
+  - 점수 보정 유틸
 
-## 요청 처리 흐름 (핵심)
+## 운영 원칙
 
-1. Python `SearchEngine.search(...)`가 PyO3 경계(`api/search_engine.rs`)로 들어온다.
-2. `CallbackVdb`가 `search_fn`을 감싼 뒤 `core::pipeline::execute_search`를 호출한다.
-3. 파이프라인은 쿼리 정규화 -> 세그먼트 검색 -> 투표 생존 -> PRF 보정 -> 재검색/재정렬 순서로 실행한다.
-4. 최종 `(Vec<u32>, Vec<f32>)`를 Python으로 반환한다.
-
-## 문서 목록
-
-- `docs/rust/module_reference.md`: 모듈별/함수별 상세 레퍼런스
-
-## 유지보수 체크리스트
-
-- `pub fn`, `pub struct`, `pub trait`, `pub enum`를 추가/변경하면 `module_reference.md`를 함께 갱신한다.
-- 검색 파이프라인 단계/상수(`SEGMENT_TOP_K`, `SURVIVOR_COUNT`, `PRF_ALPHA`, `MAX_REFINEMENT_ROUNDS`)를 바꾸면 `docs/arch/*`와 함께 동기화한다.
-- Python-Rust 경계 시그니처(`PySearchEngine.search`, `CallbackVdb.search`)를 바꾸면 `docs/python/module_reference.md`도 같이 갱신한다.
-
-## 참고: 현재 미연결 파일
-
-현재 없음.
+- DB 쿼리는 Rust에서 직접 수행
+- 필터 HTTP는 Rust에서 병렬 실행
+- 오류는 문자열이 아닌 구조적 타입(`CoreError`)으로 분류

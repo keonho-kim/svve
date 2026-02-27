@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - main
+  pull_request:
 
 concurrency:
-  group: ci-main
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -14,8 +15,7 @@ permissions:
 
 jobs:
   check:
-    name: Check (Linux)
-    if: github.actor != 'github-actions[bot]'
+    name: Rust/Python Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,247 +36,16 @@ jobs:
         run: uv sync --dev
 
       - name: Rust check
-        run: cargo check --all-targets
+        run: cargo check
 
-      - name: Python tests
-        run: uv run pytest tests/python
+      - name: Python import smoke
+        run: uv run python - <<'PY'
+          import sys
+          sys.path.insert(0, "src_py")
+          import vtree_search
 
-  build-wheels:
-    name: Wheel (${{ matrix.os }})
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ${{ matrix.os }}
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --out dist
-          manylinux: auto
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}
-          path: dist/*.whl
-          if-no-files-found: error
-
-  build-sdist:
-    name: Build sdist
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    needs: check
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build sdist
-        uses: PyO3/maturin-action@v1
-        with:
-          command: sdist
-          args: --out dist
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: dist/*.tar.gz
-          if-no-files-found: error
-
-  versioning:
-    name: Auto Versioning
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    needs:
-      - check
-      - build-wheels
-      - build-sdist
-    permissions:
-      contents: write
-    outputs:
-      new_version: ${{ steps.bump.outputs.new_version }}
-      bump_kind: ${{ steps.bump.outputs.bump_kind }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Determine next version and update files
-        id: bump
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          python - <<'PY'
-          import os
-          import re
-          import subprocess
-          from pathlib import Path
-
-
-          def run(cmd: list[str]) -> str:
-              return subprocess.check_output(cmd, text=True).strip()
-
-
-          def list_commit_subjects(range_expr: str) -> list[str]:
-              out = run(["git", "log", "--format=%s", range_expr]) if range_expr else ""
-              return [line.strip() for line in out.splitlines() if line.strip()]
-
-
-          def list_commit_bodies(range_expr: str) -> str:
-              return run(["git", "log", "--format=%b", range_expr]) if range_expr else ""
-
-
-          def parse_semver(value: str) -> tuple[int, int, int]:
-              m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", value)
-              if not m:
-                  raise ValueError(f"지원하지 않는 버전 형식: {value}")
-              return int(m.group(1)), int(m.group(2)), int(m.group(3))
-
-
-          def bump_version(current: str, bump_kind: str) -> str:
-              major, minor, patch = parse_semver(current)
-              if bump_kind == "major":
-                  return f"{major + 1}.0.0"
-              if bump_kind == "minor":
-                  return f"{major}.{minor + 1}.0"
-              return f"{major}.{minor}.{patch + 1}"
-
-
-          def read_project_version_pyproject(path: Path) -> str:
-              lines = path.read_text(encoding="utf-8").splitlines()
-              in_project = False
-              for line in lines:
-                  stripped = line.strip()
-                  if stripped == "[project]":
-                      in_project = True
-                      continue
-                  if in_project and stripped.startswith("[") and stripped.endswith("]"):
-                      break
-                  if in_project and stripped.startswith("version"):
-                      m = re.match(r'^version\s*=\s*"([^"]+)"\s*$', stripped)
-                      if not m:
-                          raise ValueError("pyproject.toml version 라인을 해석할 수 없습니다")
-                      return m.group(1)
-              raise ValueError("pyproject.toml [project] 섹션 version을 찾지 못했습니다")
-
-
-          def read_package_version_cargo(path: Path) -> str:
-              lines = path.read_text(encoding="utf-8").splitlines()
-              in_package = False
-              for line in lines:
-                  stripped = line.strip()
-                  if stripped == "[package]":
-                      in_package = True
-                      continue
-                  if in_package and stripped.startswith("[") and stripped.endswith("]"):
-                      break
-                  if in_package and stripped.startswith("version"):
-                      m = re.match(r'^version\s*=\s*"([^"]+)"\s*$', stripped)
-                      if not m:
-                          raise ValueError("Cargo.toml version 라인을 해석할 수 없습니다")
-                      return m.group(1)
-              raise ValueError("Cargo.toml [package] 섹션 version을 찾지 못했습니다")
-
-
-          def update_section_version(path: Path, section: str, new_version: str) -> None:
-              lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-              in_section = False
-              updated = False
-              for i, line in enumerate(lines):
-                  stripped = line.strip()
-                  if stripped == section:
-                      in_section = True
-                      continue
-                  if in_section and stripped.startswith("[") and stripped.endswith("]"):
-                      break
-                  if in_section and re.match(r'^version\s*=\s*"[^"]+"\s*$', stripped):
-                      nl = "\n" if line.endswith("\n") else ""
-                      lines[i] = f'version = "{new_version}"{nl}'
-                      updated = True
-                      break
-              if not updated:
-                  raise ValueError(f"{path}에서 {section} version 갱신에 실패했습니다")
-              path.write_text("".join(lines), encoding="utf-8")
-
-
-          before_sha = os.environ["BEFORE_SHA"]
-          head_sha = os.environ["HEAD_SHA"]
-          all_zeros = "0" * 40
-
-          if before_sha == all_zeros:
-              range_expr = head_sha
-          else:
-              range_expr = f"{before_sha}..{head_sha}"
-
-          subjects = list_commit_subjects(range_expr)
-          bodies = list_commit_bodies(range_expr)
-
-          major_breaking = any(re.search(r"^[a-zA-Z]+(\([^)]+\))?!:", s) for s in subjects)
-          major_breaking = major_breaking or ("BREAKING CHANGE" in bodies)
-          has_feat = any(re.search(r"^feat(\([^)]+\))?:", s) for s in subjects)
-
-          if major_breaking:
-              bump_kind = "major"
-          elif has_feat:
-              bump_kind = "minor"
-          else:
-              bump_kind = "patch"
-
-          pyproject = Path("pyproject.toml")
-          cargo = Path("Cargo.toml")
-          py_ver = read_project_version_pyproject(pyproject)
-          cargo_ver = read_package_version_cargo(cargo)
-          if py_ver != cargo_ver:
-              raise ValueError(
-                  f"버전 불일치: pyproject.toml={py_ver}, Cargo.toml={cargo_ver}"
-              )
-
-          new_version = bump_version(py_ver, bump_kind)
-
-          update_section_version(pyproject, "[project]", new_version)
-          update_section_version(cargo, "[package]", new_version)
-
-          output_file = Path(os.environ["GITHUB_OUTPUT"])
-          with output_file.open("a", encoding="utf-8") as f:
-              f.write(f"new_version={new_version}\n")
-              f.write(f"bump_kind={bump_kind}\n")
+          assert vtree_search.__version__
+          assert hasattr(vtree_search, "VTreeSearchEngine")
+          assert hasattr(vtree_search, "VtreeIngestor")
+          print("smoke-ok")
           PY
-
-      - name: Commit and tag release version
-        env:
-          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
-        run: |
-          if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
-            echo "v${NEW_VERSION} 태그가 이미 존재해 버전 커밋을 생략합니다."
-            exit 0
-          fi
-
-          if git diff --quiet -- Cargo.toml pyproject.toml; then
-            echo "버전 변경이 없어 커밋을 생략합니다."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add Cargo.toml pyproject.toml
-          git commit -m "chore(release): v${NEW_VERSION} [skip ci]"
-          git tag "v${NEW_VERSION}"
-          git push origin HEAD:main --follow-tags

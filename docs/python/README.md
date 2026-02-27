@@ -1,34 +1,81 @@
-# Python 문서 개요
+# Python 계층 개요 (Phase 2)
 
 ## 목적
 
-이 문서는 `svve_core/` Python 계층의 역할과 유지보수 기준을 정리한 인덱스 문서다.  
-핵심 관점은 "사용자 API 경계에서 어떤 검증/예외/호출을 담당하는가"이다.
+`src_py/vtree_search`의 공개 라이브러리 경계를 정의한다.
 
-## 현재 활성 컴포넌트
+## 핵심 클래스
 
-```text
-svve_core/
-├── __init__.py
-├── engine.py
-├── schemas.py
-└── exceptions.py
-```
+- `VtreeIngestor`
+  - 적재 업서트/갱신 트리거
+- `VTreeSearchEngine`
+  - 잡 제출/워커 실행/상태 조회/결과 조회/취소
 
-## 호출 흐름
+## 필수 모듈
 
-1. 사용자가 `svve_core.SearchEngine`를 생성한다.
-2. `SearchEngine.search(query, top_k, search_fn)`가 입력을 `SearchRequest`로 검증한다.
-3. 검증된 값과 `search_fn`을 Rust 확장 모듈(`_svve_core.SearchEngine.search`)에 전달한다.
-4. Rust 결과를 `np.uint32` IDs, `np.float32` scores로 변환해 반환한다.
-5. 입력 오류는 `QueryValidationError`, 실행 오류는 `SearchExecutionError`로 변환한다.
+- `config/`: 설정 모델
+- `contracts/`: DTO/잡 상태 모델
+- `runtime/`: Rust 브릿지 래퍼
+- `queue/`: Redis Streams 제어
+- `ingestion/`: 적재 서비스
+- `search/`: 검색 서비스
 
-## 문서 목록
+## Ingestion 멀티모달 처리 모듈
 
-- `docs/python/module_reference.md`: 모듈별/함수별 상세 레퍼런스
+- `ingestion/source_parser.py`
+  - Markdown/PDF/DOCX 파싱
+  - PDF 표/이미지 주석 본문 생성
+  - page 노드 변환
+- `ingestion/docx_layout.py`
+  - DOCX 레이아웃 기반 페이지 추정(A4 기준)
+  - 문단/표 높이 추정
+- `ingestion/parser_helpers.py`
+  - 표 HTML 직렬화
+  - DOCX 제목 레벨 추정
+  - PDF 이미지 bbox -> 픽셀 변환
+  - 블록 청킹
+- `ingestion/annotation_client.py`
+  - 외부 주석 HTTP 서비스 연동
+  - `[TBL]`/`[IMG]` 본문 포맷 표준화
 
-## 유지보수 체크리스트
+## `example-ingestion-python` 통합 매핑
 
-- 공개 API(`SearchEngine.search`) 시그니처 변경 시 `README.md` 사용 예시와 함께 갱신한다.
-- 예외 타입/에러 메시지 정책 변경 시 `exceptions.py`와 본 문서를 함께 수정한다.
-- 입력 검증 규칙(`schemas.py`) 변경 시 `tests/python/test_schemas.py` 케이스를 동기화한다.
+- `example-ingestion-python/core/docx_layout.py`
+  - `vtree_search/ingestion/docx_layout.py`로 이식
+- `example-ingestion-python/core/file_parser.py`의 표/이미지 흐름
+  - `vtree_search/ingestion/source_parser.py`로 통합
+- `example-ingestion-python/core/table_annotation.py`, `image_annotation.py`
+  - 외부 HTTP 연동형 `vtree_search/ingestion/annotation_client.py`로 대체
+
+## Ingestion 부하 제어 포인트
+
+- `IngestionPreprocessConfig.sample_per_extension`
+  - 샘플 ingest(확장자별 1개)로 비용 검증
+- `IngestionPreprocessConfig.max_chunk_chars`
+  - 문단 결합 최대 길이 제한
+- `IngestionPreprocessConfig.enable_table_annotation`
+  - 표 주석 호출 on/off
+- `IngestionPreprocessConfig.enable_image_annotation`
+  - 이미지 주석 호출 on/off
+- `IngestionPreprocessConfig.asset_output_dir`
+  - 추출 이미지 저장 경로 제어
+
+## 책임 분리
+
+### 라이브러리 책임
+
+- Rust 실행 경로 연결
+- 잡 큐잉/재시도/DLQ
+- 명시적 예외 타입 제공
+
+### 소비자 앱 책임
+
+- HTTP API 구현
+- 인증/인가
+- 멀티테넌시
+- 요청 라우팅
+
+## `.env` 원칙
+
+- 라이브러리 내부에서 `.env`를 읽지 않는다.
+- `scripts/run-search.py` 같은 드라이버 코드에서 `.env`를 읽어 설정을 주입한다.

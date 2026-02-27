@@ -1,7 +1,7 @@
 [project]
-name = "svve-core"
-version = "0.1.2"
-description = "Segmented Vector Voting & Expansion"
+name = "vtree-search"
+version = "1.0.0"
+description = "멀티모달 계층형 RAG 검색 엔진(Vtree Search)"
 readme = "README.md"
 authors = [
     { name = "keonhok-kim", email = "keonhok0315@gmail.com" }
@@ -10,6 +10,15 @@ requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.4.2",
     "pydantic>=2.12.5",
+    "httpx>=0.28.1",
+    "redis>=5.2.1",
+    "psycopg[binary]>=3.2.10",
+    "pypdfium2>=4.30.0",
+    "python-docx>=1.2.0",
+    "pdfplumber>=0.11.7",
+    "Pillow>=11.2.1",
+    "boto3>=1.39.11",
+    "tenacity>=9.1.2",
 ]
 
 [dependency-groups]
@@ -28,9 +37,8 @@ build-backend = "maturin"
 [tool.maturin]
 bindings = "pyo3"
 manifest-path = "Cargo.toml"
-python-source = "."
-module-name = "svve_core._svve_core"
-
+python-source = "src_py"
+module-name = "vtree_search._vtree_search"
 
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]

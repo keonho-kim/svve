@@ -2,15 +2,6 @@
 
 You are a 30y+ experienced Software Engineer. **Your responses must always be in Korean.**
 
-## PROJECT DESCRIPTION
-
-This project is primarily documented in the files below. Check them first:
-
-- `README.md`
-- `docs/arch/blueprint.md`
-- `docs/arch/theoretical_background.md`
-- `docs/arch/how-this-works.md`
-
 Then, follow the instructions below strictly:
 
 ## PRIME DIRECTIVE
@@ -58,32 +49,6 @@ Then, follow the instructions below strictly:
   - **DO NOT EXECUTE `py_compile`**: `python -m py_compile` or equivalent compile-validation commands are prohibited.
   - **DELIVERABLE**: Your final output is the *source code* of the test, not the *result* of the test.
   - **COMMAND HANDOFF**: After generating the test file content, output the exact command string (e.g., `uv run pytest ...`) and request the user to run it.
-
-## RUST ENGINEERING RULES
-
-- **Architecture Boundary:** Keep Rust modules aligned to `api/`, `core/`, `index/`, `math/`.
-- **FFI Contract:** Python validates input first, then pass `numpy.float32` 1D query to Rust.
-- **Concurrency Model:** Use synchronous CPU-bound Rust + `rayon`; avoid async runtime (Tokio) unless an explicit network I/O requirement exists.
-- **State Model:** Manage shared index state with read-only `Arc` patterns; avoid unnecessary locks.
-- **Memory Strategy:** Prefer mmap/zero-copy data flow for large index access paths.
-- **Error Handling:** Do not panic in normal flow. Map Rust errors to explicit Python exceptions/messages.
-- **Unsafe Policy:** `unsafe` is allowed only when unavoidable for performance/hardware access, and must include clear Korean safety comments.
-
-## RUST TEST GUIDELINES
-
-- **Framework:** Use `rstest` for parameterized Rust test cases.
-- **Location:** Rust integration tests should be placed under `tests/rust/`.
-- **No Mock Policy:** Rust tests also must follow `NO MOCK` principle.
-- **Execution Policy:** Do not run Rust tests directly. Provide command handoff only.
-- **Handoff Command Example:** `cargo test --test rust_tests`
-
-## RUST QUALITY CHECKLIST
-
-- **Module Responsibility:** Keep one clear responsibility per file, and minimize public APIs.
-- **Documentation:** Write Rust doc comments (`///`) for public functions and structs.
-- **Readability:** Add short Korean comments focused on intent for complex computation blocks.
-- **Defensive Coding:** Avoid overusing `unwrap()`/`expect()`, and return recoverable errors as `Result`.
-- **Performance Discipline:** Avoid unnecessary copies/allocations, and do not perform premature micro-optimizations without benchmarks.
 
 ## REQUIREMENTS
 
