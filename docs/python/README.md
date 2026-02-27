@@ -1,4 +1,14 @@
-# Python 계층 개요 (Phase 2)
+# Python 계층 개요 (Phase 3)
+
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [아키텍처 청사진](../arch/blueprint.md)
+- [런타임 동작](../arch/how-this-works.md)
+- [Python LLM 주입](./llm_injection.md)
+- [Python 모듈 레퍼런스](./module_reference.md)
+- [Rust 개요](../rust/README.md)
+- [운영 가이드](../ops/queueing-and-slo.md)
 
 ## 목적
 
@@ -17,7 +27,8 @@
 - `contracts/`: DTO/잡 상태 모델
 - `runtime/`: Rust 브릿지 래퍼
 - `queue/`: Redis Streams 제어
-- `ingestion/`: 적재 서비스
+- `llm/`: LangChain 주입 DTO/어댑터
+- `ingestion/`: 적재 서비스 + `prompts/`
 - `search/`: 검색 서비스
 
 ## Ingestion 멀티모달 처리 모듈
@@ -34,18 +45,8 @@
   - DOCX 제목 레벨 추정
   - PDF 이미지 bbox -> 픽셀 변환
   - 블록 청킹
-- `ingestion/annotation_client.py`
-  - 외부 주석 HTTP 서비스 연동
-  - `[TBL]`/`[IMG]` 본문 포맷 표준화
-
-## `example-ingestion-python` 통합 매핑
-
-- `example-ingestion-python/core/docx_layout.py`
-  - `vtree_search/ingestion/docx_layout.py`로 이식
-- `example-ingestion-python/core/file_parser.py`의 표/이미지 흐름
-  - `vtree_search/ingestion/source_parser.py`로 통합
-- `example-ingestion-python/core/table_annotation.py`, `image_annotation.py`
-  - 외부 HTTP 연동형 `vtree_search/ingestion/annotation_client.py`로 대체
+- `ingestion/prompts/table_prompt.py`, `image_prompt.py`
+  - `TABLE_PROMPT`, `IMAGE_PROMPT` 상수
 
 ## Ingestion 부하 제어 포인트
 
@@ -67,6 +68,7 @@
 - Rust 실행 경로 연결
 - 잡 큐잉/재시도/DLQ
 - 명시적 예외 타입 제공
+- LLM 호출 형식 강제
 
 ### 소비자 앱 책임
 
@@ -74,8 +76,10 @@
 - 인증/인가
 - 멀티테넌시
 - 요청 라우팅
+- 실제 모델 선택(OpenAI/Bedrock 등)
 
 ## `.env` 원칙
 
 - 라이브러리 내부에서 `.env`를 읽지 않는다.
-- `scripts/run-search.py` 같은 드라이버 코드에서 `.env`를 읽어 설정을 주입한다.
+- `scripts/run-search.py`, `scripts/run-ingestion.py` 같은 드라이버 코드에서 `.env`를 읽어 설정을 주입한다.
+- LLM 설정은 `.env` 대신 팩토리 함수(`--llm-factory`)로 주입한다.

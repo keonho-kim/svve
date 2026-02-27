@@ -2,14 +2,14 @@
 // - 검색 작업의 핵심 파이프라인을 실행한다.
 //
 // 설명:
-// - pgvector 엔트리 탐색 -> ltree 하위 페이지 확장 -> HTTP 필터링 -> top-k 절삭 순서로 처리한다.
+// - pgvector 엔트리 탐색 -> ltree 하위 페이지 확장까지 수행한다.
+// - LLM 필터링/상위 k 절삭은 Python 계층에서 수행한다.
 //
 // 디자인 패턴:
 // - 파이프라인(Pipeline).
 //
 // 참조:
 // - src_rs/index/postgres_repo.rs
-// - src_rs/core/filter_http.rs
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -17,9 +17,6 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::core::errors::{CoreError, CoreResult};
-use crate::core::filter_http::{
-    FilterCandidateInput, FilterDecision, FilterHttpClient, FilterHttpConfigPayload,
-};
 use crate::index::postgres_repo::{PageNodeRecord, PostgresRepository};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +40,6 @@ pub struct SearchRequestPayload {
     pub page_limit: usize,
     pub worker_concurrency: usize,
     pub postgres: PostgresConfigPayload,
-    pub filter_http: FilterHttpConfigPayload,
     pub metadata: Option<Value>,
 }
 
@@ -54,14 +50,12 @@ pub struct SearchCandidatePayload {
     pub score: f32,
     pub content: String,
     pub image_url: Option<String>,
-    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchMetricsPayload {
     pub entry_count: usize,
     pub page_count: usize,
-    pub kept_count: usize,
     pub elapsed_ms: u128,
 }
 
@@ -102,30 +96,12 @@ pub async fn execute_search(payload: SearchRequestPayload) -> CoreResult<SearchR
         expanded_pages.extend(pages);
     }
 
-    let filter_client = FilterHttpClient::new(payload.filter_http.clone())?;
-    let filter_inputs = expanded_pages
-        .iter()
-        .map(|page| FilterCandidateInput {
-            node_id: page.node_id.clone(),
-            content: page.content.clone(),
-        })
+    let mut candidates = expanded_pages
+        .into_iter()
+        .map(|page| to_candidate(page, &parent_score_map))
         .collect::<Vec<_>>();
 
-    let filter_decisions = filter_client
-        .filter_candidates(&payload.question, &filter_inputs, payload.worker_concurrency)
-        .await?;
-
-    let decision_map = filter_decisions
-        .into_iter()
-        .map(|decision| (decision.node_id.clone(), decision))
-        .collect::<HashMap<_, _>>();
-
-    let mut kept = expanded_pages
-        .into_iter()
-        .filter_map(|page| to_candidate(page, &parent_score_map, &decision_map))
-        .collect::<Vec<_>>();
-
-    kept.sort_by(|left, right| {
+    candidates.sort_by(|left, right| {
         right
             .score
             .partial_cmp(&left.score)
@@ -133,21 +109,16 @@ pub async fn execute_search(payload: SearchRequestPayload) -> CoreResult<SearchR
             .then_with(|| left.path.cmp(&right.path))
     });
 
-    if kept.len() > payload.top_k {
-        kept.truncate(payload.top_k);
-    }
-
     let elapsed = started.elapsed().as_millis();
     let metrics = SearchMetricsPayload {
         entry_count: entry_records.len(),
-        page_count: filter_inputs.len(),
-        kept_count: kept.len(),
+        page_count: candidates.len(),
         elapsed_ms: elapsed,
     };
 
     Ok(SearchResultPayload {
         job_id: payload.job_id,
-        candidates: kept,
+        candidates,
         metrics,
     })
 }
@@ -155,27 +126,20 @@ pub async fn execute_search(payload: SearchRequestPayload) -> CoreResult<SearchR
 fn to_candidate(
     page: PageNodeRecord,
     parent_score_map: &HashMap<String, f32>,
-    decision_map: &HashMap<String, FilterDecision>,
-) -> Option<SearchCandidatePayload> {
-    let decision = decision_map.get(&page.node_id)?;
-    if !decision.keep {
-        return None;
-    }
-
+) -> SearchCandidatePayload {
     let score = parent_score_map
         .get(&page.parent_node_id)
         .copied()
         .unwrap_or(0.0)
         .clamp(0.0, 1.0);
 
-    Some(SearchCandidatePayload {
+    SearchCandidatePayload {
         node_id: page.node_id,
         path: page.path,
         score,
         content: page.content,
         image_url: page.image_url,
-        reason: decision.reason.clone(),
-    })
+    }
 }
 
 fn validate_payload(payload: &SearchRequestPayload) -> CoreResult<()> {

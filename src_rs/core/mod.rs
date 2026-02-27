@@ -13,6 +13,5 @@
 // - src_rs/core/ingestion_pipeline.rs
 
 pub mod errors;
-pub mod filter_http;
 pub mod ingestion_pipeline;
 pub mod search_pipeline;

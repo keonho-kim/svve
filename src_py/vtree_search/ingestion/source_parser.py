@@ -11,7 +11,6 @@
 - 파이프라인(Pipeline) + 전략 분기(확장자별 처리).
 
 참조:
-- src_py/vtree_search/ingestion/annotation_client.py
 - src_py/vtree_search/ingestion/docx_layout.py
 - src_py/vtree_search/ingestion/parser_helpers.py
 - src_py/vtree_search/contracts/ingestion_models.py
@@ -29,7 +28,6 @@ from PIL import Image
 from vtree_search.config.models import IngestionConfig
 from vtree_search.contracts.ingestion_models import IngestionPageNode
 from vtree_search.exceptions import ConfigurationError, DependencyUnavailableError, IngestionProcessingError
-from vtree_search.ingestion.annotation_client import IngestionAnnotationClient
 from vtree_search.ingestion.docx_layout import (
     advance_docx_page_state,
     estimate_docx_paragraph_layout,
@@ -52,6 +50,7 @@ from vtree_search.ingestion.parser_helpers import (
     to_pixel_box,
 )
 from vtree_search.ingestion.source_types import ExtractedBlock
+from vtree_search.llm.langchain_ingestion import LangChainIngestionAnnotationLLM
 
 SUPPORTED_SUFFIXES = {".pdf", ".md", ".markdown", ".docx"}
 _RENDER_SCALE = 2.0
@@ -63,10 +62,10 @@ class SourceParser:
     def __init__(
         self,
         config: IngestionConfig,
-        annotation_client: IngestionAnnotationClient | None,
+        annotation_llm: LangChainIngestionAnnotationLLM | None,
     ) -> None:
         self._config = config
-        self._annotation_client = annotation_client
+        self._annotation_llm = annotation_llm
 
     def scan_input_files(self, input_root: str | Path, sample: bool | None = None) -> list[Path]:
         """입력 루트에서 지원 확장자 파일 목록을 수집한다."""
@@ -86,7 +85,7 @@ class SourceParser:
             files = list(pick_one_file_per_extension(files))
         return files
 
-    def build_page_nodes_from_files(
+    async def build_page_nodes_from_files(
         self,
         *,
         document_id: str,
@@ -101,7 +100,7 @@ class SourceParser:
 
         extracted: list[ExtractedBlock] = []
         for path in paths:
-            extracted.extend(self._extract_blocks(path))
+            extracted.extend(await self._extract_blocks(path))
 
         chunked = chunk_blocks(extracted, max_chars=self._config.preprocess.max_chunk_chars)
         return _to_page_nodes(
@@ -110,14 +109,14 @@ class SourceParser:
             blocks=chunked,
         )
 
-    def _extract_blocks(self, path: Path) -> list[ExtractedBlock]:
+    async def _extract_blocks(self, path: Path) -> list[ExtractedBlock]:
         suffix = path.suffix.lower()
         if suffix in {".md", ".markdown"}:
             return self._extract_markdown(path)
         if suffix == ".docx":
-            return self._extract_docx(path)
+            return await self._extract_docx(path)
         if suffix == ".pdf":
-            return self._extract_pdf(path)
+            return await self._extract_pdf(path)
         return []
 
     def _extract_markdown(self, path: Path) -> list[ExtractedBlock]:
@@ -137,7 +136,7 @@ class SourceParser:
             )
         return blocks
 
-    def _extract_docx(self, path: Path) -> list[ExtractedBlock]:
+    async def _extract_docx(self, path: Path) -> list[ExtractedBlock]:
         try:
             from docx import Document as WordDocument
         except Exception as exc:  # noqa: BLE001
@@ -248,7 +247,7 @@ class SourceParser:
                 block_height_pt=table_height_pt,
                 usable_height_pt=usable_height_pt,
             )
-            annotated = self._annotate_table(
+            annotated = await self._annotate_table(
                 table_html=html,
                 page_text="\n".join(page_texts.get(page_num, [])),
             )
@@ -273,9 +272,9 @@ class SourceParser:
 
         return blocks
 
-    def _extract_pdf(self, path: Path) -> list[ExtractedBlock]:
-        table_by_page = self._extract_pdf_tables(path)
-        image_by_page = self._extract_pdf_images(path)
+    async def _extract_pdf(self, path: Path) -> list[ExtractedBlock]:
+        table_by_page = await self._extract_pdf_tables(path)
+        image_by_page = await self._extract_pdf_images(path)
         pdf = pdfium.PdfDocument(str(path))
         blocks: list[ExtractedBlock] = []
         try:
@@ -339,7 +338,7 @@ class SourceParser:
             pdf.close()
         return blocks
 
-    def _extract_pdf_tables(self, path: Path) -> dict[int, list[str]]:
+    async def _extract_pdf_tables(self, path: Path) -> dict[int, list[str]]:
         if not self._config.preprocess.enable_table_annotation:
             return {}
 
@@ -362,7 +361,7 @@ class SourceParser:
                     html = table_matrix_to_html(raw_table)
                     if not html:
                         continue
-                    annotated = self._annotate_table(
+                    annotated = await self._annotate_table(
                         table_html=html,
                         page_text=page_text,
                     )
@@ -370,7 +369,7 @@ class SourceParser:
 
         return tables_by_page
 
-    def _extract_pdf_images(self, path: Path) -> dict[int, list[tuple[str, Path]]]:
+    async def _extract_pdf_images(self, path: Path) -> dict[int, list[tuple[str, Path]]]:
         if not self._config.preprocess.enable_image_annotation:
             return {}
 
@@ -432,7 +431,7 @@ class SourceParser:
                             finally:
                                 cropped.close()
 
-                            annotated = self._annotate_image(
+                            annotated = await self._annotate_image(
                                 image_path=image_path,
                                 page_text=page_text,
                             )
@@ -449,28 +448,28 @@ class SourceParser:
             pdf.close()
         return images_by_page
 
-    def _annotate_table(self, *, table_html: str, page_text: str) -> str:
-        annotation = self._require_annotation_client(kind="표")
-        return annotation.annotate_table(table_html=table_html, page_text=page_text)
+    async def _annotate_table(self, *, table_html: str, page_text: str) -> str:
+        annotation = self._require_annotation_llm(kind="표")
+        return await annotation.annotate_table(table_html=table_html, page_text=page_text)
 
-    def _annotate_image(self, *, image_path: Path, page_text: str) -> str:
-        annotation = self._require_annotation_client(kind="이미지")
-        return annotation.annotate_image(image_path=image_path, page_text=page_text)
+    async def _annotate_image(self, *, image_path: Path, page_text: str) -> str:
+        annotation = self._require_annotation_llm(kind="이미지")
+        return await annotation.annotate_image(image_path=image_path, page_text=page_text)
 
-    def _require_annotation_client(self, kind: str) -> IngestionAnnotationClient:
-        if self._annotation_client is None:
+    def _require_annotation_llm(self, kind: str) -> LangChainIngestionAnnotationLLM:
+        if self._annotation_llm is None:
             raise ConfigurationError(
-                f"{kind} 주석이 활성화되어 있으나 IngestionConfig.annotation 설정이 없습니다"
+                f"{kind} 주석이 활성화되어 있으나 llm 인자가 없습니다"
             )
-        return self._annotation_client
+        return self._annotation_llm
 
 
-def build_source_parser(config: IngestionConfig) -> SourceParser:
+def build_source_parser(
+    config: IngestionConfig,
+    annotation_llm: LangChainIngestionAnnotationLLM | None = None,
+) -> SourceParser:
     """설정 기반 SourceParser를 생성한다."""
-    annotation_client = None
-    if config.annotation is not None:
-        annotation_client = IngestionAnnotationClient(config.annotation)
-    return SourceParser(config=config, annotation_client=annotation_client)
+    return SourceParser(config=config, annotation_llm=annotation_llm)
 
 
 def _to_page_nodes(

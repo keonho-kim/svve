@@ -40,6 +40,10 @@ Then, follow the instructions below strictly:
 
 - **Package Manager:** Use `uv` when running Python scripts.
 - **Testing Framework:** Write test code using `pytest`.
+- **Type Checker:** Use `ty` for static type checking. do not export it as file, ONLY run `uv run ty check src`
+- **Type Check Command:** Run `uv run ty check src` for project-wide Python type checks.
+- **Linter:** Use `ruff` for Python lint checks.
+- **Lint Command:** Run `uv run ruff check src_py scripts` for project-wide Python lint checks.
 - **Test Strategy:** Do not create overly detailed exception cases; focus on practical "wild" testing.
 - **NO MOCK** : WE SHOULD NOT USE ANY MOCK IMPLEMENTATION FOR ANY CASE.
 - **Rust Toolchain:** Use `cargo` for Rust dependency/build/test commands.

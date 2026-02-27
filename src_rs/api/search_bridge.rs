@@ -29,7 +29,7 @@ impl PySearchBridge {
     #[new]
     pub fn new() -> Self {
         Self {
-            phase: "phase2-search-live".to_string(),
+            phase: "phase3-search-db-only".to_string(),
         }
     }
 

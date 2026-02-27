@@ -1,20 +1,41 @@
-# Python 모듈 레퍼런스 (Phase 2)
+# Python 모듈 레퍼런스 (Phase 3)
+
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [Python 개요](./README.md)
+- [Python LLM 주입](./llm_injection.md)
+- [아키텍처 청사진](../arch/blueprint.md)
+- [Rust 모듈 레퍼런스](../rust/module_reference.md)
+- [운영 가이드](../ops/queueing-and-slo.md)
 
 ## `vtree_search/__init__.py`
 
 - 공개 클래스: `VtreeIngestor`, `VTreeSearchEngine`
-- 공개 설정: `PostgresConfig`, `RedisQueueConfig`, `FilterHttpConfig`, `SearchConfig`, `IngestionConfig`
-- 공개 예외: `QueueOverloadedError`, `JobNotFoundError`, `JobExpiredError`, `JobFailedError`, `DependencyUnavailableError`
+- 공개 설정: `PostgresConfig`, `RedisQueueConfig`, `SearchConfig`, `IngestionConfig`
+- 공개 LLM 어댑터: `LangChainSearchFilterLLM`, `LangChainIngestionAnnotationLLM`
 
 ## `vtree_search/config/models.py`
 
 - `PostgresConfig`
 - `RedisQueueConfig`
-- `FilterHttpConfig`
 - `SearchConfig`
-- `IngestionAnnotationConfig`
 - `IngestionPreprocessConfig`
 - `IngestionConfig`
+
+## `vtree_search/llm/contracts.py`
+
+- `SearchFilterCandidate`
+- `SearchFilterDecision`
+
+## `vtree_search/llm/langchain_search.py`
+
+- `LangChainSearchFilterLLM.filter()`
+
+## `vtree_search/llm/langchain_ingestion.py`
+
+- `LangChainIngestionAnnotationLLM.annotate_table()`
+- `LangChainIngestionAnnotationLLM.annotate_image()`
 
 ## `vtree_search/contracts/search_models.py`
 
@@ -57,22 +78,29 @@
 - `VTreeSearchEngine.get_job()`
 - `VTreeSearchEngine.fetch_result()`
 - `VTreeSearchEngine.cancel_job()`
-- `VTreeSearchEngine.run_worker_once()`
-- `VTreeSearchEngine.run_worker_forever()`
+- `VTreeSearchEngine.run_worker_once()` (`async`)
+- `VTreeSearchEngine.run_worker_forever()` (`async`)
+- 생성자 입력: `llm`에 `ChatOpenAI`/`ChatGoogleGenerativeAI`/`ChatAnthropic` 같은 LangChain 채팅 모델을 직접 전달한다.
 
 ## `vtree_search/ingestion/ingestor.py`
 
-- `VtreeIngestor.upsert_document()`
-- `VtreeIngestor.upsert_pages()`
-- `VtreeIngestor.rebuild_summary_embeddings()`
-- `VtreeIngestor.build_page_nodes_from_path()`
-- `VtreeIngestor.upsert_document_from_path()`
+- `VtreeIngestor.upsert_document()` (`async`)
+- `VtreeIngestor.upsert_pages()` (`async`)
+- `VtreeIngestor.rebuild_summary_embeddings()` (`async`)
+- `VtreeIngestor.build_page_nodes_from_path()` (`async`)
+- `VtreeIngestor.upsert_document_from_path()` (`async`)
+- 생성자 입력: `llm`에 LangChain 채팅 모델을 직접 전달한다.
 
 ## `vtree_search/ingestion/source_parser.py`
 
 - `SourceParser.scan_input_files()`
-- `SourceParser.build_page_nodes_from_files()`
+- `SourceParser.build_page_nodes_from_files()` (`async`)
 - `build_source_parser()`
+
+## `vtree_search/ingestion/prompts/`
+
+- `table_prompt.py`: `TABLE_PROMPT`
+- `image_prompt.py`: `IMAGE_PROMPT`
 
 ## `vtree_search/ingestion/docx_layout.py`
 
@@ -91,8 +119,3 @@
 - `extract_pdf_image_boxes()`
 - `to_pixel_box()`
 - `chunk_blocks()`
-
-## `vtree_search/ingestion/annotation_client.py`
-
-- `IngestionAnnotationClient.annotate_table()`
-- `IngestionAnnotationClient.annotate_image()`

@@ -1,10 +1,10 @@
 """
 목적:
-- Vtree Search 라이브러리의 설정 계약을 정의한다.
+- Vtree Search 라이브러리의 설정 인터페이스을 정의한다.
 
 설명:
-- Postgres/Redis/필터 HTTP/워커 제어 값을 단일 모델로 관리한다.
-- `.env` 파싱은 드라이버 코드에서 수행하고 본 모델은 값 검증만 담당한다.
+- Postgres/Redis/워커 제어 값을 단일 모델로 관리한다.
+- LLM은 설정 파일이 아닌 Python 인자 주입으로 전달한다.
 
 디자인 패턴:
 - 값 객체(Value Object).
@@ -17,13 +17,19 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from pydantic import BaseModel, Field, field_validator
 
 
 class PostgresConfig(BaseModel):
     """Postgres 연결 및 테이블 설정 모델."""
 
-    dsn: str = Field(min_length=1)
+    host: str = Field(min_length=1)
+    port: int = Field(default=5432, ge=1, le=65535)
+    user: str = Field(min_length=1)
+    password: str = Field(default="")
+    database: str = Field(min_length=1)
     summary_table: str = Field(min_length=1)
     page_table: str = Field(min_length=1)
     embedding_dim: int = Field(ge=1)
@@ -40,11 +46,26 @@ class PostgresConfig(BaseModel):
             raise ValueError("pool_max는 pool_min 이상이어야 합니다")
         return value
 
+    def to_dsn(self) -> str:
+        """Rust 계층 전달용 Postgres DSN을 생성한다."""
+        user = quote(self.user, safe="")
+        password = quote(self.password, safe="")
+        host = self.host.strip()
+        database = quote(self.database, safe="")
+        return f"postgresql://{user}:{password}@{host}:{self.port}/{database}"
+
 
 class RedisQueueConfig(BaseModel):
     """Redis Streams 큐 제어 설정 모델."""
 
-    url: str = Field(min_length=1)
+    host: str = Field(min_length=1)
+    port: int = Field(default=6379, ge=1, le=65535)
+    db: int = Field(default=0, ge=0)
+    username: str | None = Field(default=None)
+    password: str | None = Field(default=None)
+    use_ssl: bool = Field(default=False)
+    module_name_search: str = Field(default="VtreeSearch", min_length=1)
+    module_name_ingestion: str = Field(default="VtreeIngestor", min_length=1)
     stream_search: str = Field(default="search:jobs", min_length=1)
     stream_search_dlq: str = Field(default="search:jobs:dlq", min_length=1)
     consumer_group: str = Field(default="vtree-search-group", min_length=1)
@@ -62,21 +83,11 @@ class RedisQueueConfig(BaseModel):
         return value
 
 
-class FilterHttpConfig(BaseModel):
-    """외부 필터 HTTP 엔드포인트 설정 모델."""
-
-    url: str = Field(min_length=1)
-    timeout_ms: int = Field(default=1_000, ge=1)
-    auth_token: str | None = Field(default=None)
-    model: str | None = Field(default=None)
-
-
 class SearchConfig(BaseModel):
     """검색 엔진 설정 모델."""
 
     postgres: PostgresConfig
     redis: RedisQueueConfig
-    filter_http: FilterHttpConfig
     worker_concurrency: int = Field(default=4, ge=1)
     max_retries: int = Field(default=3, ge=0)
     retry_base_ms: int = Field(default=200, ge=1)
@@ -91,15 +102,6 @@ class SearchConfig(BaseModel):
         if value < retry_base_ms:
             raise ValueError("retry_max_ms는 retry_base_ms 이상이어야 합니다")
         return value
-
-
-class IngestionAnnotationConfig(BaseModel):
-    """적재 주석(이미지/표) HTTP 엔드포인트 설정 모델."""
-
-    url: str = Field(min_length=1)
-    timeout_ms: int = Field(default=2_000, ge=1)
-    auth_token: str | None = Field(default=None)
-    model: str | None = Field(default=None)
 
 
 class IngestionPreprocessConfig(BaseModel):
@@ -117,4 +119,3 @@ class IngestionConfig(BaseModel):
 
     postgres: PostgresConfig
     preprocess: IngestionPreprocessConfig = Field(default_factory=IngestionPreprocessConfig)
-    annotation: IngestionAnnotationConfig | None = Field(default=None)

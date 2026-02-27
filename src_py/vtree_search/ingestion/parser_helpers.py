@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 from statistics import median
+from typing import Any, Sequence, cast
 
 from PIL import Image
 
@@ -76,7 +77,7 @@ def serialize_docx_table(table: object) -> str:
     return f"<table><tbody>{''.join(rows_html)}</tbody></table>"
 
 
-def table_matrix_to_html(raw_table: list[list[object | None]]) -> str:
+def table_matrix_to_html(raw_table: Sequence[Sequence[object | None]]) -> str:
     """pdfplumber 표 행렬을 HTML 문자열로 변환한다."""
     row_html_list: list[str] = []
     for raw_row in raw_table:
@@ -347,7 +348,7 @@ def _estimate_body_font_size_from_samples(sizes: list[float]) -> float:
 def _to_float(value: object) -> float | None:
     if value is None:
         return None
-    return float(value)
+    return float(cast(Any, value))
 
 
 __all__ = [

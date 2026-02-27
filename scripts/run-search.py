@@ -5,6 +5,7 @@
 설명:
 - 라이브러리 본체는 환경 파일을 직접 읽지 않는다.
 - 이 스크립트는 검색 잡 제출 -> 워커 1회 실행 -> 결과 조회 흐름을 데모한다.
+- LLM은 LangChain 객체를 팩토리 함수로 생성해 인자로 주입한다.
 
 디자인 패턴:
 - 드라이버(Driver Script).
@@ -17,20 +18,20 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import importlib
 import os
 import sys
 from pathlib import Path
 
-from vtree_search import (
-    FilterHttpConfig,
-    PostgresConfig,
-    RedisQueueConfig,
-    SearchConfig,
-    VTreeSearchEngine,
-)
+from vtree_search import PostgresConfig, RedisQueueConfig, SearchConfig, VTreeSearchEngine
 
 REQUIRED_ENV_KEYS = [
-    "POSTGRES_DSN",
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DATABASE",
     "POSTGRES_POOL_MIN",
     "POSTGRES_POOL_MAX",
     "POSTGRES_CONNECT_TIMEOUT_MS",
@@ -38,7 +39,9 @@ REQUIRED_ENV_KEYS = [
     "VTREE_SUMMARY_TABLE",
     "VTREE_PAGE_TABLE",
     "VTREE_EMBEDDING_DIM",
-    "REDIS_URL",
+    "REDIS_HOST",
+    "REDIS_PORT",
+    "REDIS_DB",
     "REDIS_STREAM_SEARCH",
     "REDIS_STREAM_SEARCH_DLQ",
     "REDIS_CONSUMER_GROUP",
@@ -50,8 +53,6 @@ REQUIRED_ENV_KEYS = [
     "JOB_MAX_RETRIES",
     "JOB_RETRY_BASE_MS",
     "JOB_RETRY_MAX_MS",
-    "FILTER_HTTP_URL",
-    "FILTER_HTTP_TIMEOUT_MS",
 ]
 
 
@@ -65,6 +66,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--top-k", type=int, default=5, help="최종 후보 개수")
     parser.add_argument("--worker", default="run-search-worker", help="워커 이름")
+    parser.add_argument(
+        "--llm-factory",
+        required=True,
+        help="LangChain 채팅 모델 팩토리 경로 (예: app.llm_factories:create_search_llm)",
+    )
     parser.add_argument(
         "--env-file",
         default=".env",
@@ -108,7 +114,11 @@ def parse_embedding(raw: str, expected_dim: int) -> list[float]:
 
 def build_config() -> SearchConfig:
     postgres = PostgresConfig(
-        dsn=os.environ["POSTGRES_DSN"],
+        host=os.environ["POSTGRES_HOST"],
+        port=int(os.environ["POSTGRES_PORT"]),
+        user=os.environ["POSTGRES_USER"],
+        password=os.environ["POSTGRES_PASSWORD"],
+        database=os.environ["POSTGRES_DATABASE"],
         summary_table=os.environ["VTREE_SUMMARY_TABLE"],
         page_table=os.environ["VTREE_PAGE_TABLE"],
         embedding_dim=int(os.environ["VTREE_EMBEDDING_DIM"]),
@@ -119,7 +129,14 @@ def build_config() -> SearchConfig:
     )
 
     redis = RedisQueueConfig(
-        url=os.environ["REDIS_URL"],
+        host=os.environ["REDIS_HOST"],
+        port=int(os.environ["REDIS_PORT"]),
+        db=int(os.environ["REDIS_DB"]),
+        username=os.environ.get("REDIS_USERNAME") or None,
+        password=os.environ.get("REDIS_PASSWORD") or None,
+        use_ssl=parse_bool_env("REDIS_USE_SSL", "false"),
+        module_name_search=os.environ.get("REDIS_MODULE_SEARCH", "VtreeSearch"),
+        module_name_ingestion=os.environ.get("REDIS_MODULE_INGESTION", "VtreeIngestor"),
         stream_search=os.environ["REDIS_STREAM_SEARCH"],
         stream_search_dlq=os.environ["REDIS_STREAM_SEARCH_DLQ"],
         consumer_group=os.environ["REDIS_CONSUMER_GROUP"],
@@ -129,17 +146,9 @@ def build_config() -> SearchConfig:
         worker_block_ms=int(os.environ["WORKER_BLOCK_MS"]),
     )
 
-    filter_http = FilterHttpConfig(
-        url=os.environ["FILTER_HTTP_URL"],
-        timeout_ms=int(os.environ["FILTER_HTTP_TIMEOUT_MS"]),
-        auth_token=os.environ.get("FILTER_HTTP_AUTH_TOKEN"),
-        model=os.environ.get("FILTER_HTTP_MODEL"),
-    )
-
     return SearchConfig(
         postgres=postgres,
         redis=redis,
-        filter_http=filter_http,
         worker_concurrency=int(os.environ["WORKER_CONCURRENCY"]),
         max_retries=int(os.environ["JOB_MAX_RETRIES"]),
         retry_base_ms=int(os.environ["JOB_RETRY_BASE_MS"]),
@@ -147,7 +156,24 @@ def build_config() -> SearchConfig:
     )
 
 
-def main() -> int:
+def parse_bool_env(key: str, default: str) -> bool:
+    raw = os.environ.get(key, default).strip().lower()
+    if raw in {"1", "true", "yes", "y"}:
+        return True
+    if raw in {"0", "false", "no", "n"}:
+        return False
+    raise RuntimeError(f"불리언 환경 변수 형식이 잘못되었습니다: {key}={raw}")
+
+
+def load_factory(spec: str):
+    if ":" not in spec:
+        raise RuntimeError("--llm-factory 형식은 module:function 이어야 합니다")
+    module_name, function_name = spec.split(":", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, function_name)
+
+
+async def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
     load_env_file(repo_root / args.env_file)
@@ -156,7 +182,10 @@ def main() -> int:
     config = build_config()
     embedding = parse_embedding(args.embedding, config.postgres.embedding_dim)
 
-    engine = VTreeSearchEngine(config)
+    factory = load_factory(args.llm_factory)
+    llm = factory()
+
+    engine = VTreeSearchEngine(config=config, llm=llm)
 
     accepted = engine.submit_search(
         query_text=args.query,
@@ -165,7 +194,7 @@ def main() -> int:
     )
     print("[submit]", accepted.model_dump_json(ensure_ascii=False))
 
-    processed = engine.run_worker_once(worker_name=args.worker, max_items=1)
+    processed = await engine.run_worker_once(worker_name=args.worker, max_items=1)
     print(f"[worker] processed={processed}")
 
     status = engine.get_job(accepted.job_id)
@@ -184,7 +213,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        raise SystemExit(asyncio.run(main()))
     except Exception as exc:  # noqa: BLE001
         print(f"[error] {exc}", file=sys.stderr)
         raise SystemExit(1)

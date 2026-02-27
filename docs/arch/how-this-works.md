@@ -1,4 +1,12 @@
-# Vtree Search 런타임 동작 문서 (Phase 2)
+# Vtree Search 런타임 동작 문서 (Phase 3)
+
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [아키텍처 청사진](./blueprint.md)
+- [이론 배경](./theoretical_background.md)
+- [운영 가이드](../ops/queueing-and-slo.md)
+- [Python LLM 주입](../python/llm_injection.md)
 
 ## 1. 개요
 
@@ -7,6 +15,7 @@
 - 공개 클래스: `VtreeIngestor`, `VTreeSearchEngine`
 - 큐: Redis Streams
 - DB: PostgreSQL (`pgvector`, `ltree`)
+- LLM: Python 주입 LangChain 객체(`ainvoke`)
 
 ## 2. 검색 실행 시퀀스
 
@@ -15,22 +24,23 @@
    - `depth >= QUEUE_REJECT_AT`면 즉시 거절
 3. `job:{id}` 상태 해시 생성(`PENDING`)
 4. Stream(`search:jobs`)에 메시지 enqueue
-5. 워커(`run_worker_once`/`run_worker_forever`)가 메시지 소비
+5. 워커(`await run_worker_once`/`await run_worker_forever`)가 메시지 소비
 6. 상태 `RUNNING` 전환 후 Rust 검색 파이프라인 실행
-7. 성공 시 `SUCCEEDED` + `result_json` 저장 + ACK
-8. 실패 시 재시도 또는 DLQ 이동 후 ACK
+7. Rust 확장 후보에 대해 LangChain 배치 필터(`ainvoke`) 실행
+8. 성공 시 `SUCCEEDED` + `result_json` 저장 + ACK
+9. 실패 시 재시도 또는 DLQ 이동 후 ACK
 
 ## 3. 적재 실행 시퀀스
 
-- `VtreeIngestor.upsert_document()`
+- `await VtreeIngestor.upsert_document()`
   - summary/page 노드 업서트
-- `VtreeIngestor.upsert_pages()`
+- `await VtreeIngestor.upsert_pages()`
   - page 노드만 업서트
-- `VtreeIngestor.rebuild_summary_embeddings()`
+- `await VtreeIngestor.rebuild_summary_embeddings()`
   - summary 노드 갱신 트리거 실행
-- `VtreeIngestor.build_page_nodes_from_path()`
+- `await VtreeIngestor.build_page_nodes_from_path()`
   - Markdown/PDF/DOCX 파싱
-  - PDF 표/이미지, DOCX 표 주석 본문 생성
+  - PDF 표/이미지, DOCX 표를 LLM 주석 생성
   - 레이아웃 메타데이터 포함 page 노드 변환
 
 ## 4. 잡 상태 머신
@@ -49,8 +59,10 @@
 - `dlq_count`
 - `job_latency_ms`
 - `db_query_latency_ms`
-- `filter_http_latency_ms`
-- `filter_http_error_rate`
+- `search_llm_filter_latency_ms`
+- `search_llm_filter_error_rate`
+- `ingestion_llm_annotation_latency_ms`
+- `ingestion_llm_annotation_error_rate`
 
 ## 6. 서비스 레벨 목표(초기값)
 

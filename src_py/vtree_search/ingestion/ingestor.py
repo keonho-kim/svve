@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from vtree_search.contracts.ingestion_models import (
     IngestionSummaryNode,
 )
 from vtree_search.ingestion.source_parser import build_source_parser
+from vtree_search.llm.langchain_ingestion import LangChainIngestionAnnotationLLM
 from vtree_search.runtime.bridge import RustRuntimeBridge
 
 
@@ -37,12 +39,16 @@ class VtreeIngestor:
     def __init__(
         self,
         config: IngestionConfig,
+        llm=None,
         runtime_bridge: RustRuntimeBridge | None = None,
     ) -> None:
         self._config = config
+        self._annotation_llm = (
+            None if llm is None else LangChainIngestionAnnotationLLM(chat_model=llm)
+        )
         self._runtime_bridge = runtime_bridge or RustRuntimeBridge()
 
-    def upsert_document(self, document: IngestionDocument) -> IngestionResult:
+    async def upsert_document(self, document: IngestionDocument) -> IngestionResult:
         """문서 단위 summary/page 노드를 upsert한다."""
         payload = self._build_ingestion_payload(
             operation="upsert_document",
@@ -51,10 +57,10 @@ class VtreeIngestor:
             page_nodes=[node.model_dump() for node in document.page_nodes],
         )
 
-        response = self._runtime_bridge.execute_ingestion_job(payload)
+        response = await asyncio.to_thread(self._runtime_bridge.execute_ingestion_job, payload)
         return IngestionResult.model_validate(response)
 
-    def upsert_pages(self, document_id: str, pages: list[IngestionPageNode]) -> IngestionResult:
+    async def upsert_pages(self, document_id: str, pages: list[IngestionPageNode]) -> IngestionResult:
         """페이지 노드만 upsert한다."""
         payload = self._build_ingestion_payload(
             operation="upsert_pages",
@@ -63,10 +69,10 @@ class VtreeIngestor:
             page_nodes=[node.model_dump() for node in pages],
         )
 
-        response = self._runtime_bridge.execute_ingestion_job(payload)
+        response = await asyncio.to_thread(self._runtime_bridge.execute_ingestion_job, payload)
         return IngestionResult.model_validate(response)
 
-    def rebuild_summary_embeddings(self, document_id: str) -> IngestionResult:
+    async def rebuild_summary_embeddings(self, document_id: str) -> IngestionResult:
         """summary 노드 갱신 트리거를 실행한다."""
         payload = self._build_ingestion_payload(
             operation="rebuild_summary_embeddings",
@@ -75,10 +81,10 @@ class VtreeIngestor:
             page_nodes=[],
         )
 
-        response = self._runtime_bridge.execute_ingestion_job(payload)
+        response = await asyncio.to_thread(self._runtime_bridge.execute_ingestion_job, payload)
         return IngestionResult.model_validate(response)
 
-    def build_page_nodes_from_path(
+    async def build_page_nodes_from_path(
         self,
         *,
         document_id: str,
@@ -97,15 +103,15 @@ class VtreeIngestor:
         Returns:
             적재 가능한 `IngestionPageNode` 목록.
         """
-        parser = build_source_parser(self._config)
-        return parser.build_page_nodes_from_files(
+        parser = build_source_parser(self._config, annotation_llm=self._annotation_llm)
+        return await parser.build_page_nodes_from_files(
             document_id=document_id,
             parent_node_id=parent_node_id,
             input_root=input_root,
             sample=sample,
         )
 
-    def upsert_document_from_path(
+    async def upsert_document_from_path(
         self,
         *,
         document_id: str,
@@ -115,7 +121,7 @@ class VtreeIngestor:
         sample: bool | None = None,
     ) -> IngestionResult:
         """입력 파일에서 page 노드를 생성해 문서 단위로 업서트한다."""
-        page_nodes = self.build_page_nodes_from_path(
+        page_nodes = await self.build_page_nodes_from_path(
             document_id=document_id,
             parent_node_id=parent_node_id,
             input_root=input_root,
@@ -127,7 +133,7 @@ class VtreeIngestor:
             summary_nodes=summary_nodes,
             page_nodes=page_nodes,
         )
-        return self.upsert_document(document)
+        return await self.upsert_document(document)
 
     def _build_ingestion_payload(
         self,
@@ -142,7 +148,7 @@ class VtreeIngestor:
             "summary_nodes": summary_nodes,
             "page_nodes": page_nodes,
             "postgres": {
-                "dsn": self._config.postgres.dsn,
+                "dsn": self._config.postgres.to_dsn(),
                 "summary_table": self._config.postgres.summary_table,
                 "page_table": self._config.postgres.page_table,
                 "pool_min": self._config.postgres.pool_min,

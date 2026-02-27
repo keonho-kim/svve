@@ -10,7 +10,6 @@ requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.4.2",
     "pydantic>=2.12.5",
-    "httpx>=0.28.1",
     "redis>=5.2.1",
     "psycopg[binary]>=3.2.10",
     "pypdfium2>=4.30.0",
@@ -19,6 +18,10 @@ dependencies = [
     "Pillow>=11.2.1",
     "boto3>=1.39.11",
     "tenacity>=9.1.2",
+    "langchain-core>=1.2.16",
+    "langchain-openai>=1.1.10",
+    "langchain-google-genai>=4.2.1",
+    "langchain-anthropic>=1.1.0",
 ]
 
 [dependency-groups]
@@ -28,6 +31,7 @@ dev = [
     "pytest-cov>=7.0.0",
     "pytest-env>=1.2.0",
     "ruff>=0.15.1",
+    "ty>=0.0.19",
 ]
 
 [build-system]

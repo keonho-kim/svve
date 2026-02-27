@@ -13,8 +13,6 @@
 """
 
 from .models import (
-    FilterHttpConfig,
-    IngestionAnnotationConfig,
     IngestionConfig,
     IngestionPreprocessConfig,
     PostgresConfig,
@@ -25,9 +23,7 @@ from .models import (
 __all__ = [
     "PostgresConfig",
     "RedisQueueConfig",
-    "FilterHttpConfig",
     "SearchConfig",
-    "IngestionAnnotationConfig",
     "IngestionPreprocessConfig",
     "IngestionConfig",
 ]

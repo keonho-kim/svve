@@ -1,4 +1,12 @@
-# Rust 모듈 레퍼런스 (Phase 2)
+# Rust 모듈 레퍼런스 (Phase 3)
+
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [Rust 개요](./README.md)
+- [아키텍처 청사진](../arch/blueprint.md)
+- [Python 모듈 레퍼런스](../python/module_reference.md)
+- [운영 가이드](../ops/queueing-and-slo.md)
 
 ## `src_rs/lib.rs`
 
@@ -27,14 +35,13 @@
   - `InvalidInput`
   - `InvalidConfig`
   - `Db`
-  - `Http`
   - `Serialization`
   - `Runtime`
 
 ## `src_rs/core/search_pipeline.rs`
 
 - 입력: `SearchRequestPayload`
-- 출력: `SearchResultPayload`
+- 출력: `SearchResultPayload` (필터 전 후보 + 메트릭)
 - 함수: `execute_search(payload)`
 
 ## `src_rs/core/ingestion_pipeline.rs`
@@ -42,12 +49,6 @@
 - 입력: `IngestionRequestPayload`
 - 출력: `IngestionResultPayload`
 - 함수: `execute_ingestion(payload)`
-
-## `src_rs/core/filter_http.rs`
-
-- `FilterHttpClient`
-- 함수:
-  - `filter_candidates(question, candidates, concurrency)`
 
 ## `src_rs/index/postgres_repo.rs`
 

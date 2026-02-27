@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from statistics import median
+from typing import Any, cast
 
 
 def iterate_docx_blocks(document: object) -> list[tuple[str, object]]:
@@ -35,10 +36,20 @@ def iterate_docx_blocks(document: object) -> list[tuple[str, object]]:
     for child in body.iterchildren():
         tag = str(getattr(child, "tag", "")).rsplit("}", maxsplit=1)[-1]
         if tag == "p":
-            blocks.append(("paragraph", DocxParagraph(child, document)))
+            blocks.append(
+                (
+                    "paragraph",
+                    DocxParagraph(child, cast(Any, document)),
+                )
+            )
             continue
         if tag == "tbl":
-            blocks.append(("table", DocxTable(child, document)))
+            blocks.append(
+                (
+                    "table",
+                    DocxTable(child, cast(Any, document)),
+                )
+            )
     return blocks
 
 
@@ -54,10 +65,14 @@ def resolve_docx_layout_metrics(document: object) -> dict[str, float]:
     if sections:
         section = sections[0]
 
-    margin_left_pt = _length_to_pt(getattr(section, "left_margin", None), default=72.0)
-    margin_right_pt = _length_to_pt(getattr(section, "right_margin", None), default=72.0)
-    margin_top_pt = _length_to_pt(getattr(section, "top_margin", None), default=72.0)
-    margin_bottom_pt = _length_to_pt(getattr(section, "bottom_margin", None), default=72.0)
+    margin_left_pt_raw = _length_to_pt(getattr(section, "left_margin", None), default=72.0)
+    margin_right_pt_raw = _length_to_pt(getattr(section, "right_margin", None), default=72.0)
+    margin_top_pt_raw = _length_to_pt(getattr(section, "top_margin", None), default=72.0)
+    margin_bottom_pt_raw = _length_to_pt(getattr(section, "bottom_margin", None), default=72.0)
+    margin_left_pt = 72.0 if margin_left_pt_raw is None else float(margin_left_pt_raw)
+    margin_right_pt = 72.0 if margin_right_pt_raw is None else float(margin_right_pt_raw)
+    margin_top_pt = 72.0 if margin_top_pt_raw is None else float(margin_top_pt_raw)
+    margin_bottom_pt = 72.0 if margin_bottom_pt_raw is None else float(margin_bottom_pt_raw)
 
     usable_width_pt = max(120.0, page_width_pt - margin_left_pt - margin_right_pt)
     usable_height_pt = max(160.0, page_height_pt - margin_top_pt - margin_bottom_pt)
@@ -244,7 +259,7 @@ def _coerce_docx_line_spacing_value_pt(value: object, *, font_size: float) -> fl
     if point is not None and float(point) > 0:
         return float(point)
 
-    numeric = float(value)
+    numeric = float(cast(Any, value))
     if numeric <= 0:
         return None
     # 1.0, 1.5, 2.0 형태는 '배수'로 간주한다.
@@ -323,7 +338,7 @@ def _length_to_pt(value: object, default: float | None) -> float | None:
     if point is not None:
         return float(point)
 
-    numeric = float(value)
+    numeric = float(cast(Any, value))
     if numeric <= 0:
         return default
     # EMU 값으로 보이면 pt로 환산한다. (1pt = 12700 EMU)

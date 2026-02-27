@@ -39,16 +39,24 @@ class RedisSearchQueue:
 
     def __init__(self, config: RedisQueueConfig) -> None:
         self._config = config
-        self._redis = self._create_client(config.url)
+        self._redis = self._create_client(config)
 
     @staticmethod
-    def _create_client(url: str):
+    def _create_client(config: RedisQueueConfig):
         try:
             import redis
         except Exception as exc:  # pragma: no cover - 런타임 환경 의존
             raise DependencyUnavailableError(f"redis 패키지를 불러오지 못했습니다: {exc}") from exc
 
-        return redis.Redis.from_url(url=url, decode_responses=True)
+        return redis.Redis(
+            host=config.host,
+            port=config.port,
+            db=config.db,
+            username=config.username,
+            password=config.password,
+            ssl=config.use_ssl,
+            decode_responses=True,
+        )
 
     @property
     def config(self) -> RedisQueueConfig:
@@ -86,7 +94,7 @@ class RedisSearchQueue:
                 f"큐 포화 상태입니다: depth={depth}, reject_at={self._config.queue_reject_at}"
             )
 
-    def create_job_record(self, job_id: str, payload_json: str) -> None:
+    def create_job_record(self, job_id: str, payload_json: str, module_name: str) -> None:
         """잡 상태 해시를 초기화한다."""
         now = _utc_now()
         key = self._job_key(job_id)
@@ -98,6 +106,7 @@ class RedisSearchQueue:
             "canceled": "0",
             "created_at": now,
             "updated_at": now,
+            "module_name": module_name,
             "payload_json": payload_json,
             "last_error": "",
             "result_json": "",
@@ -106,7 +115,13 @@ class RedisSearchQueue:
         self._redis.hset(key, mapping=mapping)
         self._redis.expire(key, self._config.result_ttl_sec)
 
-    def enqueue(self, job_id: str, payload_json: str, retries: int = 0) -> str:
+    def enqueue(
+        self,
+        job_id: str,
+        payload_json: str,
+        retries: int = 0,
+        module_name: str = "",
+    ) -> str:
         """검색 큐에 작업을 추가한다."""
         self._truncate_if_needed()
 
@@ -114,6 +129,7 @@ class RedisSearchQueue:
             "job_id": job_id,
             "payload_json": payload_json,
             "retries": str(retries),
+            "module_name": module_name,
             "enqueued_at": _utc_now(),
         }
 

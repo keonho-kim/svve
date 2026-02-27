@@ -1,4 +1,12 @@
-# Rust 계층 개요 (Phase 2)
+# Rust 계층 개요 (Phase 3)
+
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [아키텍처 청사진](../arch/blueprint.md)
+- [런타임 동작](../arch/how-this-works.md)
+- [Rust 모듈 레퍼런스](./module_reference.md)
+- [Python 개요](../python/README.md)
 
 ## 목적
 
@@ -10,9 +18,8 @@
   - `SearchBridge`: 검색 JSON 실행 진입점
   - `IngestionBridge`: 적재 JSON 실행 진입점
 - `core/`
-  - `search_pipeline`: 검색 파이프라인
+  - `search_pipeline`: DB 검색/후보 확장
   - `ingestion_pipeline`: 적재 파이프라인
-  - `filter_http`: 외부 필터 병렬 호출
   - `errors`: 오류 모델
 - `index/`
   - `postgres_repo`: 조회/upsert 저장소
@@ -23,5 +30,5 @@
 ## 운영 원칙
 
 - DB 쿼리는 Rust에서 직접 수행
-- 필터 HTTP는 Rust에서 병렬 실행
+- LLM 필터/주석은 Python 계층에서 수행
 - 오류는 문자열이 아닌 구조적 타입(`CoreError`)으로 분류

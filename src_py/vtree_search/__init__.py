@@ -4,7 +4,7 @@
 
 설명:
 - 라이브러리 핵심 클래스는 `VtreeIngestor`, `VTreeSearchEngine` 두 가지다.
-- 설정/계약/예외를 함께 노출해 앱 개발자가 바로 사용할 수 있게 한다.
+- 설정/인터페이스/예외/LLM 어댑터를 함께 노출한다.
 
 디자인 패턴:
 - 퍼사드(Facade).
@@ -15,8 +15,6 @@
 """
 
 from .config.models import (
-    FilterHttpConfig,
-    IngestionAnnotationConfig,
     IngestionConfig,
     IngestionPreprocessConfig,
     PostgresConfig,
@@ -40,14 +38,20 @@ from .contracts.job_models import (
 from .exceptions import (
     ConfigurationError,
     DependencyUnavailableError,
+    IngestionProcessingError,
     JobExpiredError,
     JobFailedError,
     JobNotFoundError,
     QueueOverloadedError,
-    IngestionProcessingError,
     VtreeSearchError,
 )
 from .ingestion.ingestor import VtreeIngestor
+from .llm import (
+    LangChainIngestionAnnotationLLM,
+    LangChainSearchFilterLLM,
+    SearchFilterCandidate,
+    SearchFilterDecision,
+)
 from .search.engine import VTreeSearchEngine
 from .version import __version__
 
@@ -59,9 +63,11 @@ __all__ = [
     "IngestionConfig",
     "PostgresConfig",
     "RedisQueueConfig",
-    "FilterHttpConfig",
-    "IngestionAnnotationConfig",
     "IngestionPreprocessConfig",
+    "SearchFilterCandidate",
+    "SearchFilterDecision",
+    "LangChainSearchFilterLLM",
+    "LangChainIngestionAnnotationLLM",
     "SearchJobAccepted",
     "SearchJobStatus",
     "SearchJobResult",

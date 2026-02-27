@@ -1,5 +1,14 @@
 # Queueing & SLO 운영 가이드
 
+## 관련 문서
+
+- [프로젝트 개요](../../README.md)
+- [아키텍처 청사진](../arch/blueprint.md)
+- [런타임 동작](../arch/how-this-works.md)
+- [이론 배경](../arch/theoretical_background.md)
+- [Python 개요](../python/README.md)
+- [Python LLM 주입](../python/llm_injection.md)
+
 ## 1. 큐 정책
 
 - 모델: Redis Streams + Consumer Group
@@ -27,7 +36,7 @@
 ### 큐 적체 증가
 
 1. `queue_depth`, `queue_reject_count` 확인
-2. 필터 HTTP 지연(`filter_http_latency_ms`) 확인
+2. `search_llm_filter_latency_ms` 확인
 3. 필요 시 `QUEUE_REJECT_AT` 하향 또는 워커 수평 확장
 
 ### DLQ 증가
@@ -56,15 +65,15 @@
 - `ingestion_files_total`
 - `ingestion_tables_total`
 - `ingestion_images_total`
-- `ingestion_annotation_latency_ms`
-- `ingestion_annotation_error_rate`
+- `ingestion_llm_annotation_latency_ms`
+- `ingestion_llm_annotation_error_rate`
 - `ingestion_asset_disk_usage_bytes`
 
 ## 6. Ingestion 장애 대응
 
-### 주석 서비스 지연/실패 증가
+### 주석 지연/실패 증가
 
-1. `ingestion_annotation_latency_ms`, `ingestion_annotation_error_rate`를 확인한다.
+1. `ingestion_llm_annotation_latency_ms`, `ingestion_llm_annotation_error_rate`를 확인한다.
 2. 이미지/표 중 병목 모듈을 구분하기 위해 플래그를 분리 적용한다.
 3. 필요 시 샘플 모드로 축소 실행 후 원인 문서 유형(PDF/DOCX)을 특정한다.
 
